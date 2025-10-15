@@ -1,8 +1,29 @@
 {
   "name": "nbork",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "CLI tunnel client for nbork channels",
+  "keywords": [
+    "tunnel",
+    "cloudflare",
+    "cli"
+  ],
+  "main": "dist/src/client.js",
+  "types": "dist/src/client.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/src/client.js",
+      "types": "./dist/src/client.d.ts"
+    }
+  },
+  "bin": {
+    "nbork": "dist/bin/tunnel.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
@@ -10,11 +31,18 @@
     "lint": "biome lint --fix",
     "cf-typegen": "wrangler types"
   },
+  "dependencies": {
+    "ws": "^8.17.1"
+  },
   "devDependencies": {
     "@types/node": "^24.7.2",
+    "@types/ws": "^8.5.10",
     "biome": "^0.3.3",
     "prettier": "^3.6.2",
     "typescript": "^5.5.2",
     "wrangler": "^4.43.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

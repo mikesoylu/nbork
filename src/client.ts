@@ -1,5 +1,5 @@
 // client/src/index.ts
-import WebSocket from 'ws';
+import WebSocket, { RawData } from 'ws';
 
 export interface RunTunnelOptions {
   channel: string;
@@ -21,6 +21,14 @@ const enc64 = (u8: Uint8Array | ArrayBuffer) =>
     'base64',
   );
 const dec64 = (s: string) => Buffer.from(s, 'base64');
+const rawDataToBuffer = (data: RawData): Buffer => {
+  if (typeof data === 'string') return Buffer.from(data);
+  if (Array.isArray(data)) return Buffer.concat(data);
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
+  return data as Buffer;
+};
+const rawDataToString = (data: RawData) =>
+  typeof data === 'string' ? data : rawDataToBuffer(data).toString('utf8');
 
 function toWsUrl(httpOrWs: string) {
   const u = new URL(httpOrWs);
@@ -30,7 +38,7 @@ function toWsUrl(httpOrWs: string) {
 
 type Conn = {
   ws: WebSocket;
-  send: (obj: any) => void;
+  send: (obj: unknown) => void;
   close: () => void;
   isOpen: () => boolean;
   flush: () => void;
@@ -109,7 +117,7 @@ export function runTunnel({
 
     const isOpen = () => ws.readyState === WebSocket.OPEN;
 
-    const send = (obj: any) => {
+    const send = (obj: unknown) => {
       const payload = typeof obj === 'string' ? obj : JSON.stringify(obj);
       if (isOpen()) {
         try {
@@ -168,16 +176,17 @@ export function runTunnel({
       startHeartbeats(conn);
     });
 
-    ws.on('close', (code, reason) => {
+    ws.on('close', (code: number, reason: Buffer) => {
       if (current === conn) {
         current = null;
         stopHeartbeats();
       }
-      log(`[tunnel] closed (${code}${reason ? ` ${reason}` : ''})`);
+      const reasonText = reason.toString();
+      log(`[tunnel] closed (${code}${reasonText ? ` ${reasonText}` : ''})`);
       scheduleReconnect('close');
     });
 
-    ws.on('error', (err) => {
+    ws.on('error', (err: Error) => {
       if (current === conn) {
         current = null;
         stopHeartbeats();
@@ -188,12 +197,11 @@ export function runTunnel({
 
     ws.on('pong', conn.onPong);
 
-    ws.on('message', async (raw) => {
+    ws.on('message', async (raw: RawData) => {
       // IMPORTANT: reply using *this connection's* send(), never globals
       const send = conn.send.bind(conn);
 
-      const msg: ControlMsg =
-        typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(raw.toString());
+      const msg: ControlMsg = JSON.parse(rawDataToString(raw));
 
       // app heartbeat
       if (msg.type === 'ping') {
@@ -296,11 +304,9 @@ export function runTunnel({
           lws.on('open', () => {
             send({ type: 'ws_ready', id });
           });
-          lws.on('message', (data, isBinary) => {
+          lws.on('message', (data: RawData, isBinary: boolean) => {
             if (isBinary) {
-              const base64 = Buffer.isBuffer(data)
-                ? data.toString('base64')
-                : Buffer.from(data as any).toString('base64');
+              const base64 = rawDataToBuffer(data).toString('base64');
               send({
                 type: 'ws_to_edge',
                 id,
@@ -308,10 +314,7 @@ export function runTunnel({
                 binary: true,
               });
             } else {
-              const text =
-                typeof data === 'string'
-                  ? data
-                  : Buffer.from(data as any).toString('utf8');
+              const text = rawDataToString(data);
               const base64 = Buffer.from(text, 'utf8').toString('base64');
               send({
                 type: 'ws_to_edge',
@@ -321,10 +324,11 @@ export function runTunnel({
               });
             }
           });
-          lws.on('close', (code, reason) => {
-            send({ type: 'ws_close', id, code, reason: reason.toString() });
+          lws.on('close', (code: number, reason: Buffer) => {
+            const reasonText = reason.toString();
+            send({ type: 'ws_close', id, code, reason: reasonText });
           });
-          lws.on('error', (err) => {
+          lws.on('error', (err: Error) => {
             send({ type: 'ws_close', id, code: 1011, reason: String(err) });
           });
 
