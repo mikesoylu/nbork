@@ -1,26 +1,31 @@
 // client/src/index.ts
-import WebSocket from "ws";
+import WebSocket from 'ws';
 
 export interface RunTunnelOptions {
   channel: string;
-  baseUrl: string;   // e.g. "https://nbork.com"
+  baseUrl: string; // e.g. "https://nbork.com"
   secret?: string;
   log?: (...args: any[]) => void;
 }
 
-interface ControlMsg { type: string; [k: string]: any }
+interface ControlMsg {
+  type: string;
+  [k: string]: any;
+}
 
 const SYM_CTRL = (id: string) => Symbol.for(`ctrl:${id}`);
-const SYM_LWS  = (id: string) => Symbol.for(`lws:${id}`);
+const SYM_LWS = (id: string) => Symbol.for(`lws:${id}`);
 
 const enc64 = (u8: Uint8Array | ArrayBuffer) =>
-  Buffer.from(u8 instanceof Uint8Array ? u8 : new Uint8Array(u8)).toString("base64");
-const dec64 = (s: string) => Buffer.from(s, "base64");
+  Buffer.from(u8 instanceof Uint8Array ? u8 : new Uint8Array(u8)).toString(
+    'base64',
+  );
+const dec64 = (s: string) => Buffer.from(s, 'base64');
 
 function toWsUrl(httpOrWs: string) {
   const u = new URL(httpOrWs);
-  u.protocol = u.protocol.replace("http", "ws");
-  return u.toString().replace(/\/$/, "");
+  u.protocol = u.protocol.replace('http', 'ws');
+  return u.toString().replace(/\/$/, '');
 }
 
 type Conn = {
@@ -33,9 +38,14 @@ type Conn = {
   lastPong: number;
 };
 
-export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTunnelOptions) {
+export function runTunnel({
+  channel,
+  baseUrl,
+  secret,
+  log = console.log,
+}: RunTunnelOptions) {
   const url = new URL(`/_connect/${encodeURIComponent(channel)}`, baseUrl);
-  if (secret) url.searchParams.set("auth", secret);
+  if (secret) url.searchParams.set('auth', secret);
 
   let closed = false;
   let attempt = 0;
@@ -47,8 +57,9 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
   let appHeartbeat: NodeJS.Timeout | undefined;
 
   function stopHeartbeats() {
-    if (transportHeartbeat) clearInterval(transportHeartbeat), (transportHeartbeat = undefined);
-    if (appHeartbeat) clearInterval(appHeartbeat), (appHeartbeat = undefined);
+    if (transportHeartbeat)
+      (clearInterval(transportHeartbeat), (transportHeartbeat = undefined));
+    if (appHeartbeat) (clearInterval(appHeartbeat), (appHeartbeat = undefined));
   }
 
   function startHeartbeats(conn: Conn) {
@@ -57,7 +68,9 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
     // ws-level ping (some hops honor this)
     transportHeartbeat = setInterval(() => {
       if (conn.isOpen()) {
-        try { (conn.ws as any).ping?.(); } catch {}
+        try {
+          (conn.ws as any).ping?.();
+        } catch {}
       }
     }, 15_000);
 
@@ -66,10 +79,12 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
       if (!conn.isOpen()) return;
       if (Date.now() - conn.lastPong > 30_000) {
         // stale: hard-drop; reconnect will spin
-        try { conn.ws.terminate(); } catch {}
+        try {
+          conn.ws.terminate();
+        } catch {}
         return;
       }
-      conn.send({ type: "ping", ts: Date.now() });
+      conn.send({ type: 'ping', ts: Date.now() });
     }, 10_000);
   }
 
@@ -95,10 +110,14 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
     const isOpen = () => ws.readyState === WebSocket.OPEN;
 
     const send = (obj: any) => {
-      const payload = typeof obj === "string" ? obj : JSON.stringify(obj);
+      const payload = typeof obj === 'string' ? obj : JSON.stringify(obj);
       if (isOpen()) {
-        try { ws.send(payload); }
-        catch { if (queue.length >= MAX_QUEUE) queue.shift(); queue.push(payload); }
+        try {
+          ws.send(payload);
+        } catch {
+          if (queue.length >= MAX_QUEUE) queue.shift();
+          queue.push(payload);
+        }
       } else {
         if (queue.length >= MAX_QUEUE) queue.shift();
         queue.push(payload);
@@ -109,16 +128,31 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
       if (!isOpen()) return;
       while (queue.length) {
         const next = queue.shift()!;
-        try { ws.send(next); }
-        catch { queue.unshift(next); break; }
+        try {
+          ws.send(next);
+        } catch {
+          queue.unshift(next);
+          break;
+        }
       }
     };
 
-    const onPong = () => { conn.lastPong = Date.now(); };
+    const onPong = () => {
+      conn.lastPong = Date.now();
+    };
 
     const conn: Conn = {
-      ws, send, close: () => { try { ws.terminate(); } catch {} },
-      isOpen, flush, onPong, lastPong: Date.now(),
+      ws,
+      send,
+      close: () => {
+        try {
+          ws.terminate();
+        } catch {}
+      },
+      isOpen,
+      flush,
+      onPong,
+      lastPong: Date.now(),
     };
     return conn;
   }
@@ -126,7 +160,7 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
   function attachHandlers(conn: Conn) {
     const { ws } = conn;
 
-    ws.on("open", () => {
+    ws.on('open', () => {
       attempt = 0;
       current = conn; // promote to current *only when open*
       log(`[tunnel] connected: ${channel}`);
@@ -134,53 +168,68 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
       startHeartbeats(conn);
     });
 
-    ws.on("close", (code, reason) => {
-      if (current === conn) { current = null; stopHeartbeats(); }
-      log(`[tunnel] closed (${code}${reason ? ` ${reason}` : ""})`);
-      scheduleReconnect("close");
+    ws.on('close', (code, reason) => {
+      if (current === conn) {
+        current = null;
+        stopHeartbeats();
+      }
+      log(`[tunnel] closed (${code}${reason ? ` ${reason}` : ''})`);
+      scheduleReconnect('close');
     });
 
-    ws.on("error", (err) => {
-      if (current === conn) { current = null; stopHeartbeats(); }
+    ws.on('error', (err) => {
+      if (current === conn) {
+        current = null;
+        stopHeartbeats();
+      }
       log(`[tunnel] error`, err);
-      scheduleReconnect("error");
+      scheduleReconnect('error');
     });
 
-    ws.on("pong", conn.onPong);
+    ws.on('pong', conn.onPong);
 
-    ws.on("message", async (raw) => {
+    ws.on('message', async (raw) => {
       // IMPORTANT: reply using *this connection's* send(), never globals
       const send = conn.send.bind(conn);
 
       const msg: ControlMsg =
-        typeof raw === "string" ? JSON.parse(raw) : JSON.parse(raw.toString());
+        typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(raw.toString());
 
       // app heartbeat
-      if (msg.type === "ping") { send({ type: "pong", ts: Date.now() }); return; }
-      if (msg.type === "pong") { conn.onPong(); return; }
+      if (msg.type === 'ping') {
+        send({ type: 'pong', ts: Date.now() });
+        return;
+      }
+      if (msg.type === 'pong') {
+        conn.onPong();
+        return;
+      }
 
       switch (msg.type) {
-        case "http_open": {
+        case 'http_open': {
           const id = msg.id as string;
           const headers: Record<string, string> = msg.headers || {};
-          const method = String(msg.method || "GET").toUpperCase();
+          const method = String(msg.method || 'GET').toUpperCase();
           const localUrl = `http://127.0.0.1:${msg.port}${msg.url}`;
 
-          const canHaveBody = method !== "GET" && method !== "HEAD";
+          const canHaveBody = method !== 'GET' && method !== 'HEAD';
 
           let ctrl: ReadableStreamDefaultController<Uint8Array> | undefined;
           let reqBody: ReadableStream<Uint8Array> | undefined;
 
           if (canHaveBody) {
             reqBody = new ReadableStream<Uint8Array>({
-              start(c) { ctrl = c; (globalThis as any)[SYM_CTRL(id)] = { ctrl }; }
+              start(c) {
+                ctrl = c;
+                (globalThis as any)[SYM_CTRL(id)] = { ctrl };
+              },
             });
           }
 
           const init: RequestInit = {
             method,
             headers,
-            ...(canHaveBody && reqBody ? { body: reqBody as any } : {})
+            ...(canHaveBody && reqBody ? { body: reqBody as any } : {}),
           };
 
           const resP = fetch(localUrl, init).catch((e) => ({ error: e }));
@@ -188,39 +237,45 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
           (async () => {
             const res: any = await resP;
             if ((res as any).error) {
-              send({ type: "http_error", id, message: String((res as any).error) });
+              send({
+                type: 'http_error',
+                id,
+                message: String((res as any).error),
+              });
               return;
             }
 
             send({
-              type: "http_head",
+              type: 'http_head',
               id,
               status: res.status,
-              headers: Object.fromEntries(res.headers.entries())
+              headers: Object.fromEntries(res.headers.entries()),
             });
 
-            if (method !== "HEAD" && res.body) {
+            if (method !== 'HEAD' && res.body) {
               const reader = res.body.getReader();
               while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                send({ type: "http_chunk", id, chunkBase64: enc64(value!) });
+                send({ type: 'http_chunk', id, chunkBase64: enc64(value!) });
               }
             }
-            send({ type: "http_end", id });
+            send({ type: 'http_end', id });
           })();
           break;
         }
 
-        case "http_body": {
+        case 'http_body': {
           const id = msg.id as string;
           const holder = (globalThis as any)[SYM_CTRL(id)];
-          const controller: ReadableStreamDefaultController<Uint8Array> | undefined = holder?.ctrl;
+          const controller:
+            | ReadableStreamDefaultController<Uint8Array>
+            | undefined = holder?.ctrl;
           if (controller) controller.enqueue(dec64(msg.chunkBase64));
           break;
         }
 
-        case "http_body_end": {
+        case 'http_body_end': {
           const id = msg.id as string;
           const holder = (globalThis as any)[SYM_CTRL(id)];
           if (holder?.ctrl) holder.ctrl.close();
@@ -228,30 +283,56 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
           break;
         }
 
-        case "ws_open": {
+        case 'ws_open': {
           const id = msg.id as string;
           const localUrl = `ws://127.0.0.1:${msg.port}${msg.url}`;
-          const lws = new WebSocket(localUrl);
+          const protocol: string | undefined = msg.protocol; // <—— from DO
 
-          lws.on("open", () => { send({ type: "ws_ready", id }); });
-          lws.on("message", (data, isBinary) => {
-            const base64 = Buffer.isBuffer(data)
-              ? data.toString("base64")
-              : Buffer.from(data as any).toString("base64");
-            send({ type: "ws_to_edge", id, dataBase64: base64, binary: !!isBinary });
+          // Pass protocol if provided (Vite expects "vite-hmr")
+          const lws = protocol
+            ? new WebSocket(localUrl, protocol) // <—— important
+            : new WebSocket(localUrl);
+
+          lws.on('open', () => {
+            send({ type: 'ws_ready', id });
           });
-          lws.on("close", (code, reason) => {
-            send({ type: "ws_close", id, code, reason: reason.toString() });
+          lws.on('message', (data, isBinary) => {
+            if (isBinary) {
+              const base64 = Buffer.isBuffer(data)
+                ? data.toString('base64')
+                : Buffer.from(data as any).toString('base64');
+              send({
+                type: 'ws_to_edge',
+                id,
+                dataBase64: base64,
+                binary: true,
+              });
+            } else {
+              const text =
+                typeof data === 'string'
+                  ? data
+                  : Buffer.from(data as any).toString('utf8');
+              const base64 = Buffer.from(text, 'utf8').toString('base64');
+              send({
+                type: 'ws_to_edge',
+                id,
+                dataBase64: base64,
+                binary: false,
+              });
+            }
           });
-          lws.on("error", (err) => {
-            send({ type: "ws_close", id, code: 1011, reason: String(err) });
+          lws.on('close', (code, reason) => {
+            send({ type: 'ws_close', id, code, reason: reason.toString() });
+          });
+          lws.on('error', (err) => {
+            send({ type: 'ws_close', id, code: 1011, reason: String(err) });
           });
 
           (globalThis as any)[SYM_LWS(id)] = lws;
           break;
         }
 
-        case "ws_from_edge": {
+        case 'ws_from_edge': {
           const id = msg.id as string;
           const lws: WebSocket | undefined = (globalThis as any)[SYM_LWS(id)];
           if (!lws) break;
@@ -265,10 +346,13 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
           break;
         }
 
-        case "ws_close": {
+        case 'ws_close': {
           const id = msg.id as string;
           const lws: WebSocket | undefined = (globalThis as any)[SYM_LWS(id)];
-          if (lws) try { lws.close(msg.code || 1000, msg.reason || ""); } catch {}
+          if (lws)
+            try {
+              lws.close(msg.code || 1000, msg.reason || '');
+            } catch {}
           delete (globalThis as any)[SYM_LWS(id)];
           break;
         }
@@ -292,8 +376,13 @@ export function runTunnel({ channel, baseUrl, secret, log = console.log }: RunTu
     close: () => {
       closed = true;
       stopHeartbeats();
-      try { current?.close(); } catch {}
-      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = undefined; }
+      try {
+        current?.close();
+      } catch {}
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+      }
     },
   };
 }

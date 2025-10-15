@@ -89,6 +89,16 @@ export class TunnelDO {
     if (upgrade === 'websocket') {
       if (!this.control)
         return new Response('Tunnel not connected', { status: 502 });
+
+      const offered = (req.headers.get('sec-websocket-protocol') || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      // Pick the first offered (or explicitly prefer 'vite-hmr' if present)
+      const protocol = offered.includes('vite-hmr')
+        ? 'vite-hmr'
+        : offered[0] || undefined;
+
       const port = req.headers.get('x-tunnel-port') || '';
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
@@ -104,6 +114,7 @@ export class TunnelDO {
             id,
             port,
             url: url.pathname + (url.search || ''),
+            protocol, // <—— forward to client
             headers: Object.fromEntries(req.headers.entries()),
           } as Json),
         );
@@ -112,30 +123,27 @@ export class TunnelDO {
       server.addEventListener('message', (ev: MessageEvent) => {
         const data = ev.data;
         if (typeof data === 'string') {
-          const textB64 = btoa(unescape(encodeURIComponent(data)));
-          try {
-            this.control!.send(
-              JSON.stringify({
-                type: 'ws_from_edge',
-                id,
-                binary: false,
-                dataBase64: textB64,
-              }),
-            );
-          } catch {}
+          const bytes = new TextEncoder().encode(data);
+          this.control!.send(
+            JSON.stringify({
+              type: 'ws_from_edge',
+              id,
+              binary: false,
+              dataBase64: b64(bytes),
+            }),
+          );
         } else if (data instanceof ArrayBuffer) {
-          try {
-            this.control!.send(
-              JSON.stringify({
-                type: 'ws_from_edge',
-                id,
-                binary: true,
-                dataBase64: b64(data),
-              }),
-            );
-          } catch {}
+          this.control!.send(
+            JSON.stringify({
+              type: 'ws_from_edge',
+              id,
+              binary: true,
+              dataBase64: b64(data),
+            }),
+          );
         }
       });
+
       server.addEventListener('close', (ev: CloseEvent) => {
         try {
           this.control!.send(
@@ -163,7 +171,11 @@ export class TunnelDO {
         this.wsEdge.delete(id);
       });
 
-      return new Response(null, { status: 101, webSocket: client });
+      // *** Echo the chosen subprotocol in the 101 response ***
+      const headers = new Headers();
+      if (protocol) headers.set('Sec-WebSocket-Protocol', protocol);
+
+      return new Response(null, { status: 101, webSocket: client, headers }); // <—— important
     }
 
     // HTTP
@@ -326,12 +338,13 @@ export class TunnelDO {
       case 'ws_to_edge': {
         const edge = this.wsEdge.get(msg.id);
         if (!edge) break;
-        const payload = msg.binary
-          ? decodeB64(msg.dataBase64)
-          : decodeURIComponent(escape(atob(msg.dataBase64)));
-        try {
-          msg.binary ? edge.send(payload) : edge.send(String(payload));
-        } catch {}
+        const bytes = decodeB64(msg.dataBase64);
+        if (msg.binary) {
+          edge.send(bytes); // binary frame
+        } else {
+          const textDecoder = new TextDecoder();
+          edge.send(textDecoder.decode(bytes)); // text frame
+        }
         break;
       }
       case 'ws_close': {
