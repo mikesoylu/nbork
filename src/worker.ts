@@ -45,6 +45,8 @@ export default {
 
     const { channel, port } = m2.groups as any;
 
+    console.log('Connecting:', { channel, port });
+
     const id = env.TUNNEL.idFromName(channel);
     const stub = env.TUNNEL.get(id);
 
@@ -57,3 +59,5 @@ export default {
     return stub.fetch(fwd);
   },
 };
+
+export { TunnelDO } from './tunnel-do';

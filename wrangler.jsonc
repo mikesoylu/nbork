@@ -25,4 +25,8 @@
   "observability": {
     "enabled": true,
   },
+  "routes": [
+    { "pattern": "*.nbork.com/*", "zone_name": "nbork.com" },
+    { "pattern": "nbork.com/*", "zone_name": "nbork.com" },
+  ],
 }
