@@ -1,7 +1,7 @@
-import type { TunnelDO } from './tunnel-do';
+import setupScript from '../setup.sh';
 
 export interface Env {
-  TUNNEL: DurableObjectNamespace<TunnelDO>;
+  TUNNEL: DurableObjectNamespace;
   ROOT_DOMAIN: string; // e.g. "tunnel.app"
 }
 
@@ -15,6 +15,23 @@ export default {
     _ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(req.url);
+
+    if (url.hostname === env.ROOT_DOMAIN && url.pathname === '/setup.sh') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        return new Response('Method not allowed', {
+          status: 405,
+          headers: { allow: 'GET, HEAD' },
+        });
+      }
+
+      return new Response(req.method === 'HEAD' ? null : setupScript, {
+        headers: {
+          'cache-control': 'public, max-age=300',
+          'content-type': 'text/x-shellscript; charset=utf-8',
+          'x-content-type-options': 'nosniff',
+        },
+      });
+    }
 
     // Control channel: ws connect from the client CLI
     if (url.pathname.startsWith('/_connect/')) {

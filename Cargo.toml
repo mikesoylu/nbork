@@ -1,6 +1,6 @@
 [package]
 name = "nbork"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "A lightweight client for nbork reverse tunnels"
 repository = "https://github.com/mikesoylu/nbork"
