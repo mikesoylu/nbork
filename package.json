@@ -1,6 +1,6 @@
 {
   "name": "nbork",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "CLI tunnel client for nbork channels",
   "keywords": [
     "tunnel",

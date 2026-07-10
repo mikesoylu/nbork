@@ -15,7 +15,7 @@ The installer downloads the appropriate precompiled binary from the latest GitHu
 To install a specific release or directory:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mikesoylu/nbork/main/setup.sh | NBORK_VERSION=v0.2.0 NBORK_INSTALL_DIR="$HOME/bin" sh
+curl -fsSL https://raw.githubusercontent.com/mikesoylu/nbork/main/setup.sh | NBORK_VERSION=v0.2.1 NBORK_INSTALL_DIR="$HOME/bin" sh
 ```
 
 Windows x86-64 binaries are attached to each GitHub release for manual installation.
@@ -74,4 +74,4 @@ npm run build
 npm run dev
 ```
 
-Pushing a tag such as `v0.2.0` builds stripped binaries for Linux, macOS, and Windows and publishes them with checksums to a GitHub release.
+Pushing a tag such as `v0.2.1` builds stripped binaries for Linux, macOS, and Windows and publishes them with checksums to a GitHub release.

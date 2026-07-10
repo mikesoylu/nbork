@@ -249,7 +249,14 @@ export class TunnelDO {
       status === 101 || status === 204 || status === 205 || status === 304;
     const isHead = method === 'HEAD';
     if (nullBodyStatuses || isHead) return new Response(null, head);
-    return new Response(bodyStream, head);
+
+    // The native client forwards encoded response bytes unchanged. Tell the
+    // Workers runtime not to gzip/brotli those bytes a second time.
+    const headers = new Headers(head.headers);
+    return new Response(bodyStream, {
+      ...head,
+      encodeBody: headers.has('content-encoding') ? 'manual' : 'automatic',
+    });
   }
 
   private startHeartbeat() {
