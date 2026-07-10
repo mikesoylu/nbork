@@ -167,3 +167,6 @@ dist
 .env*
 !.env.example
 .wrangler/
+
+# Rust build output
+target/

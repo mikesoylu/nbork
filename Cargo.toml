@@ -1,0 +1,28 @@
+[package]
+name = "nbork"
+version = "0.2.0"
+edition = "2021"
+description = "A lightweight client for nbork reverse tunnels"
+repository = "https://github.com/mikesoylu/nbork"
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.22"
+bytes = "1.10"
+futures-util = "0.3"
+http-body-util = "0.1"
+hyper = { version = "1.10", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "tokio"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+serde_json = "1.0"
+tokio = { version = "1.52", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = "0.1"
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+url = "2.5"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = 3
+panic = "abort"
+strip = true
