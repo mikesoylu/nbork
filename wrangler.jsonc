@@ -4,7 +4,6 @@
   "main": "src/worker.ts",
   "workers_dev": true,
   "placement": { "mode": "smart" },
-  "rules": [{ "type": "Text", "globs": ["**/*.sh"], "fallthrough": true }],
   "vars": {
     "ROOT_DOMAIN": "nbork.com",
   },

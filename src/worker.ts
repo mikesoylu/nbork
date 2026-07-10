@@ -1,5 +1,3 @@
-import setupScript from '../setup.sh';
-
 export interface Env {
   TUNNEL: DurableObjectNamespace;
   ROOT_DOMAIN: string; // e.g. "tunnel.app"
@@ -24,11 +22,12 @@ export default {
         });
       }
 
-      return new Response(req.method === 'HEAD' ? null : setupScript, {
+      return new Response(null, {
+        status: 302,
         headers: {
           'cache-control': 'public, max-age=300',
-          'content-type': 'text/x-shellscript; charset=utf-8',
-          'x-content-type-options': 'nosniff',
+          location:
+            'https://raw.githubusercontent.com/mikesoylu/nbork/main/setup.sh',
         },
       });
     }
