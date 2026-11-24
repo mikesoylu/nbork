@@ -113,5 +113,5 @@ func main() {
 		}
 		return nil
 	}}
-	g.serve(&workerSocket{socket: session.Get("client")}, func() {})
+	g.serve(&workerSocket{socket: session.Get("client")})
 }

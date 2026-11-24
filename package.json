@@ -8,7 +8,7 @@
     "cloudflare"
   ],
   "scripts": {
-    "build": "sh ingress/build-worker.sh && tsc -p tsconfig.json",
+    "build": "sh ssh-gateway/build-worker.sh && tsc -p tsconfig.json",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",

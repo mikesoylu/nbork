@@ -74,7 +74,7 @@ Each connection supports one interactive shell. The public gateway listens on po
 
 ### Hosting the SSH gateway
 
-Spectrum sends port 22 on `ssh.nbork.com` to the Worker. A Durable Object runs the Go SSH gateway as WebAssembly and connects to the selected channel through an internal binding. The installer and agent WebSockets use `nbork.com`. [Operator setup](ingress/README.md)
+Spectrum sends port 22 on `ssh.nbork.com` to the Worker. A Durable Object runs the Go SSH gateway as WebAssembly and connects to the selected channel through an internal binding. The installer and agent WebSockets use `nbork.com`. [Operator setup](ssh-gateway/README.md)
 
 ## Configuration
 
@@ -109,6 +109,6 @@ npm run build
 npm run dev
 ```
 
-Wrangler listens on HTTP port 8787 and TCP port 8788 locally. After `cargo build` and `npm ci`, run `python3 tests/ssh.py` to exercise the Worker's TCP routes. With Go 1.26 or newer installed, run `python3 tests/ingress.py` to exercise the shared ingress with OpenSSH, HTTPS and an agent WebSocket. Both suites start local services on temporary ports.
+Wrangler listens on HTTP port 8787 and TCP port 8788 locally. After `npm ci`, `npm run build`, and `cargo build`, run `python3 tests/ssh.py` to check the TCP routes and `python3 tests/ssh_gateway.py` to check OpenSSH login, host keys, the installer redirect, and agent WebSockets. Both suites start local services on temporary ports.
 
 Pushing a tag such as `v0.3.0` builds stripped binaries for Linux, macOS, and Windows and publishes them with checksums to a GitHub release.
