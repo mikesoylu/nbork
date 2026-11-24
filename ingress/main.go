@@ -1,10 +1,11 @@
+//go:build !js
+
 // Command ingress serves the public nbork apex on SSH, HTTP and HTTPS.
 package main
 
 import (
-	"context"
 	"crypto/tls"
-	"errors"
+
 	"flag"
 	"log"
 	"net"
@@ -52,7 +53,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	gateway := gateway{domain: *domain, endpoint: *spectrum, pins: pins, signer: signer}
+	gateway := gateway{
+		signer: signer,
+		dial:   spectrumDialer(*spectrum, *domain),
+		pin:    func(name string, key ssh.PublicKey) error { return pinHost(filepath.Join(pins, name), key) },
+	}
 	proxy := &httputil.ReverseProxy{Rewrite: func(req *httputil.ProxyRequest) {
 		req.SetURL(upstream)
 		req.SetXForwarded()
@@ -106,55 +111,3 @@ func main() {
 		}
 	}
 }
-
-type gateway struct {
-	domain, endpoint, pins string
-	signer                 ssh.Signer
-}
-
-func (g *gateway) serve(socket net.Conn, handshakeDone func()) {
-	defer socket.Close()
-	deadline := time.Now().Add(90 * time.Second)
-	socket.SetDeadline(deadline)
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
-	var backend *ssh.Client
-	config := &ssh.ServerConfig{NoClientAuth: true, MaxAuthTries: 4}
-	login := func(meta ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-		host, err := g.login(ctx, meta.User(), password)
-		if err != nil {
-			if !errors.Is(err, errPassword) {
-				log.Printf("SSH backend unavailable for %.63q: %v", meta.User(), err)
-				socket.Close()
-			}
-			return nil, err
-		}
-		backend = host
-		return nil, nil
-	}
-	config.NoClientAuthCallback = func(meta ssh.ConnMetadata) (*ssh.Permissions, error) { return login(meta, nil) }
-	config.PasswordCallback = login
-	config.AddHostKey(g.signer)
-	outer, channels, requests, err := ssh.NewServerConn(socket, config)
-	handshakeDone()
-	if backend != nil {
-		defer backend.Close()
-	}
-	if err != nil {
-		return
-	}
-	defer outer.Close()
-	socket.SetDeadline(time.Time{})
-	go ssh.DiscardRequests(requests)
-	opened := false
-	for ch := range channels {
-		if opened || ch.ChannelType() != "session" {
-			ch.Reject(ssh.Prohibited, "nbork supports one shell per connection")
-			continue
-		}
-		opened = true
-		go relaySession(ch, backend)
-	}
-}
-
-var errPassword = errors.New("password authentication required")

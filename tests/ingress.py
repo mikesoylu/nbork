@@ -44,36 +44,37 @@ def check_web(port, cert):
 def exercise(tmp):
     http, tcp, web, clear, ssh = [available_port() for _ in range(5)]
     domain = "nbork.test"
+    key, cert, tls_key = (tmp / k for k in ("host", "cert.pem", "tls.key"))
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key], check=True)
     config = tmp / "wrangler.json"
     config.write_text(json.dumps({
         "name": "nbork-ingress-test", "main": str(ROOT / "src/worker.ts"),
         "compatibility_date": "2025-10-11",
-        "vars": {"ROOT_DOMAIN": domain, "WEB_ORIGIN_HOST": "127.0.0.1"},
+        "vars": {"ROOT_DOMAIN": domain, "WEB_ORIGIN_HOST": "127.0.0.1", "SSH_HOST_KEY": key.read_text()},
         "connect": [{"protocol": "tcp", "port": tcp}],
-        "durable_objects": {"bindings": [{"name": "TUNNEL", "class_name": "TunnelDO"}]},
-        "migrations": [{"tag": "v1", "new_sqlite_classes": ["TunnelDO"]}],
+        "durable_objects": {"bindings": [{"name": "TUNNEL", "class_name": "TunnelDO"},
+                                        {"name": "SSH_GATEWAY", "class_name": "SshGateway"}]},
+        "migrations": [{"tag": "v1", "new_sqlite_classes": ["TunnelDO", "SshGateway"]}],
     }))
-    key, cert, tls_key = (tmp / k for k in ("host", "cert.pem", "tls.key"))
-    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key], check=True)
     subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                     "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost",
                     "-keyout", tls_key, "-out", cert], check=True, capture_output=True)
     binary = tmp / "ingress"
     subprocess.run(["go", "build", "-o", binary, "."], cwd=ROOT / "ingress", check=True)
     known = tmp / "known_hosts"
-    known.write_text(f"[127.0.0.1]:{ssh} " + (tmp / "host.pub").read_text())
+    known.write_text(f"[127.0.0.1]:{ssh},[127.0.0.1]:{tcp} " + (tmp / "host.pub").read_text())
     askpass = tmp / "askpass"
     askpass.write_text('#!/bin/sh\necho asked >> "$PROMPTS"\nprintf "%s\\n" "$REPLY"\n')
     askpass.chmod(0o700)
 
-    def login(name, code, password=None, marker=None):
+    def login(name, code, password=None, marker=None, port=ssh, options=()):
         prompts = tmp / "prompts"
         prompts.write_text("")
         result = subprocess.run([
-            "ssh", "-F", "/dev/null", "-tt", "-p", str(ssh), "-o", "HostName=127.0.0.1",
+            "ssh", "-F", "/dev/null", "-tt", "-p", str(port), "-o", "HostName=127.0.0.1",
             "-o", f"UserKnownHostsFile={known}", "-o", "StrictHostKeyChecking=yes",
             "-o", "GlobalKnownHostsFile=/dev/null", "-o", "IdentityAgent=none",
-            "-o", "NumberOfPasswordPrompts=1", f"{name}@{domain}",
+            "-o", "NumberOfPasswordPrompts=1", *options, f"{name}@{domain}",
         ], input=b'printf "agent-%s\\n" "$NBORK_TEST_MARKER"\nexit 7\n', capture_output=True, timeout=15,
            env={**os.environ, "SSH_ASKPASS_REQUIRE": "force", "SSH_ASKPASS": str(askpass),
                 "REPLY": password or "", "PROMPTS": str(prompts)})
@@ -100,16 +101,20 @@ def exercise(tmp):
         stack.enter_context(agent("open", "first", "--ssh"))
         stack.enter_context(agent("web-only", "web-only", "--no-ssh"))
         with agent("locked", "original", "--secret", "correct"):
-            login("open", 7, marker="first")
-            login("locked", 255, "incorrect")
-            login("locked", 7, "correct", "original")
-            login("offline", 255)
-            login("web-only", 255)
+            for port in (ssh, tcp):
+                login("open", 7, marker="first", port=port)
+                login("locked", 255, "incorrect", port=port)
+                login("locked", 7, "correct", "original", port)
+                login("offline", 255, port=port)
+                login("web-only", 255, port=port)
+            login("locked", 7, "correct", "original", tcp, options=[
+                "-o", f"ProxyCommand=nc -X connect -x 127.0.0.1:{tcp} ssh.{domain} 22"])
         with agent("locked", "replacement", "--secret", "correct"):
+            login("locked", 255, port=tcp)
             login("locked", 255)  # Reject a changed host before offering it a password.
 
 
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as directory:
         exercise(Path(directory))
-    print("Apex SSH routing, host keys, password prompts, HTTPS and WebSockets passed")
+    print("Worker and standalone SSH gateways, host keys, authentication, HTTPS and WebSockets passed")

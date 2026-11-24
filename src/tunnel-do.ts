@@ -1,12 +1,19 @@
+import { DurableObject } from 'cloudflare:workers';
 import { b64, decodeB64 } from './base64';
 import { closeSocket, SshRelay } from './ssh-relay';
 
 type Json = Record<string, any>;
 
-export class TunnelDO {
-  private state: DurableObjectState;
-  constructor(state: DurableObjectState) {
-    this.state = state;
+export class TunnelDO extends DurableObject {
+  // Only the internal Durable Object binding can call this method.
+  async pinSshHost(fingerprint: string): Promise<boolean> {
+    return this.ctx.storage.transactionSync(() => {
+      const pins = this.ctx.storage.kv;
+      const saved = pins.get<string>('ssh-host-key');
+      if (saved !== undefined) return saved === fingerprint;
+      pins.put('ssh-host-key', fingerprint);
+      return true;
+    });
   }
 
   private control?: WebSocket;
@@ -279,9 +286,9 @@ export class TunnelDO {
   }
 
   private startHeartbeat() {
-    if (this.hbTimer) this.state.storage.deleteAlarm().catch(() => {});
+    if (this.hbTimer) this.ctx.storage.deleteAlarm().catch(() => {});
     // Use alarms to schedule checks ~every 10s without busy loops
-    this.state.storage.setAlarm(Date.now() + 10_000).catch(() => {});
+    this.ctx.storage.setAlarm(Date.now() + 10_000).catch(() => {});
     this.hbTimer = 1 as any;
   }
 
@@ -301,7 +308,7 @@ export class TunnelDO {
       this.onControlGone(this.control as any);
     }
     // schedule next
-    this.state.storage.setAlarm(Date.now() + 10_000).catch(() => {});
+    this.ctx.storage.setAlarm(Date.now() + 10_000).catch(() => {});
   }
 
   private onControlGone(server?: WebSocket) {

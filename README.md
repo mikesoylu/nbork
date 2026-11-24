@@ -51,30 +51,30 @@ Start nbork on the computer you want to reach. SSH is enabled by default. The sh
 nbork demo
 ```
 
-With the shared ingress deployed, connect from another computer with stock OpenSSH. The username is the nbork channel name.
+Connect from another computer with stock OpenSSH. The username is the nbork channel name.
 
 ```sh
-ssh demo@nbork.com
+ssh demo@ssh.nbork.com
 ```
 
 Use `nbork demo --no-ssh` for an HTTP and WebSocket tunnel only.
 
 **Without a password, anyone who can reach the channel can open a shell.** On first use, confirm passwordless access in the host terminal. nbork remembers your approval for that channel and broker. An unattended launch without prior approval starts the web tunnel only. Passing `--ssh` explicitly enables shell access for that run.
 
-To require a password, start nbork with `--secret <password>` or set `TUNNEL_SECRET`. OpenSSH prompts for the password and the host verifies it. The ingress terminates SSH and can read the password and shell traffic. On first connection, OpenSSH asks you to verify the gateway's host key. The gateway separately pins the agent's key, which nbork stores in `~/.nbork/ssh_host_ed25519_key`. Set `NBORK_SSH_DIR` to choose another directory.
+To require a password, start nbork with `--secret <password>` or set `TUNNEL_SECRET`. OpenSSH prompts for the password and the host verifies it. The Cloudflare gateway terminates SSH and can read the password and shell traffic. On first connection, OpenSSH asks you to verify the gateway's host key. The gateway separately pins the agent's key, which nbork stores in `~/.nbork/ssh_host_ed25519_key`. Set `NBORK_SSH_DIR` to choose another directory.
 
 ### SSH limitations
 
 Each connection supports one interactive shell. The public gateway listens on port 22. OpenSSH’s `-p` option changes the port dialed on the gateway. The following SSH features are unsupported.
 
-- One-shot commands such as `ssh demo@nbork.com uptime`. Run `uptime` after connecting.
+- One-shot commands such as `ssh demo@ssh.nbork.com uptime`. Run `uptime` after connecting.
 - File transfers with `scp`, `sftp`, or `rsync` over SSH.
 - Port forwarding (`-L`, `-R`, `-D`), agent forwarding, and X11 forwarding.
 - Client public-key login through `authorized_keys`.
 
 ### Hosting the SSH gateway
 
-One ingress serves `nbork.com` on port 22 for SSH and port 443 for HTTPS and agent WebSockets. It uses the existing Cloudflare Worker and Spectrum endpoint to reach each channel. The operator configures the ingress once. [Deployment and cutover guide](ingress/README.md)
+Spectrum sends port 22 on `ssh.nbork.com` to the Worker. A Durable Object runs the Go SSH gateway as WebAssembly and connects to the selected channel through an internal binding. The installer and agent WebSockets use `nbork.com`. [Operator setup](ingress/README.md)
 
 ## Configuration
 
@@ -101,7 +101,7 @@ cargo test
 cargo build --release
 ```
 
-The Cloudflare Worker remains TypeScript-based:
+Building the Worker requires Node.js and Go 1.26 or newer. Wrangler compiles the SSH gateway during its build.
 
 ```sh
 npm ci

@@ -1,7 +1,11 @@
+import type { TunnelDO } from './tunnel-do';
+import type { SshGateway } from './ssh-gateway';
 import { routeSsh } from './ssh-route';
 
 export interface Env {
-  TUNNEL: DurableObjectNamespace;
+  TUNNEL: DurableObjectNamespace<TunnelDO>;
+  SSH_GATEWAY?: DurableObjectNamespace<SshGateway>;
+  SSH_HOST_KEY?: string;
   SSH_ROUTES?: Record<string, string>;
   WEB_ORIGIN_HOST?: string;
   ROOT_DOMAIN: string; // e.g. "tunnel.app"
@@ -85,3 +89,5 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 export { TunnelDO } from './tunnel-do';
+
+export { SshGateway } from './ssh-gateway';
