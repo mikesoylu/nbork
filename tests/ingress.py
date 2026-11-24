@@ -67,14 +67,14 @@ def exercise(tmp):
     askpass.write_text('#!/bin/sh\necho asked >> "$PROMPTS"\nprintf "%s\\n" "$REPLY"\n')
     askpass.chmod(0o700)
 
-    def login(name, code, password=None, marker=None, port=ssh):
+    def login(name, code, password=None, marker=None, port=ssh, options=()):
         prompts = tmp / "prompts"
         prompts.write_text("")
         result = subprocess.run([
             "ssh", "-F", "/dev/null", "-tt", "-p", str(port), "-o", "HostName=127.0.0.1",
             "-o", f"UserKnownHostsFile={known}", "-o", "StrictHostKeyChecking=yes",
             "-o", "GlobalKnownHostsFile=/dev/null", "-o", "IdentityAgent=none",
-            "-o", "NumberOfPasswordPrompts=1", f"{name}@{domain}",
+            "-o", "NumberOfPasswordPrompts=1", *options, f"{name}@{domain}",
         ], input=b'printf "agent-%s\\n" "$NBORK_TEST_MARKER"\nexit 7\n', capture_output=True, timeout=15,
            env={**os.environ, "SSH_ASKPASS_REQUIRE": "force", "SSH_ASKPASS": str(askpass),
                 "REPLY": password or "", "PROMPTS": str(prompts)})
@@ -107,6 +107,8 @@ def exercise(tmp):
                 login("locked", 7, "correct", "original", port)
                 login("offline", 255, port=port)
                 login("web-only", 255, port=port)
+            login("locked", 7, "correct", "original", tcp, options=[
+                "-o", f"ProxyCommand=nc -X connect -x 127.0.0.1:{tcp} ssh.{domain} 22"])
         with agent("locked", "replacement", "--secret", "correct"):
             login("locked", 255, port=tcp)
             login("locked", 255)  # Reject a changed host before offering it a password.

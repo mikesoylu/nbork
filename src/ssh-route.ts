@@ -80,13 +80,18 @@ export async function routeSsh(socket: Socket, env: Env) {
         reader.releaseLock();
       }
     }
-    const destination = channel
-      ? env.TUNNEL.getByName(channel)
-      : env.SSH_GATEWAY?.get(env.SSH_GATEWAY.newUniqueId());
+    const viaProxy = !!channel && !dedicated;
+    // Previously documented wildcard ProxyCommands also match ssh.<domain>.
+    // Unwrap CONNECT for the gateway itself before processing its SSH username.
+    const gateway = env.SSH_GATEWAY;
+    const destination =
+      channel && !(viaProxy && gateway && channel === 'ssh')
+        ? env.TUNNEL.getByName(channel)
+        : gateway?.get(gateway.newUniqueId());
     if (!destination) return;
     upstream = destination.connect('ssh:22', { allowHalfOpen: true });
     await upstream.opened;
-    if (channel && !dedicated) {
+    if (viaProxy) {
       await write(
         socket.writable,
         encoder.encode('HTTP/1.0 200 Connection established\r\n\r\n'),
