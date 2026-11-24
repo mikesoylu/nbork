@@ -30,6 +30,12 @@ async function readConnect(
     if (done) break;
     const previous = header.length;
     header += decoder.decode(value.subarray(0, 4096 - previous));
+    if (header.startsWith('SSH-')) {
+      const rest = new Uint8Array(previous + value.length);
+      rest.set(encoder.encode(header.slice(0, previous)));
+      rest.set(value, previous);
+      return { channel: undefined, rest };
+    }
     const end = header.indexOf('\r\n\r\n', Math.max(0, previous - 3));
     if (end === -1) continue;
     const channel = channelFromConnect(header, domain);
@@ -74,21 +80,24 @@ export async function routeSsh(socket: Socket, env: Env) {
         reader.releaseLock();
       }
     }
-    upstream = env.TUNNEL.getByName(channel).connect('ssh:22', {
-      allowHalfOpen: true,
-    });
+    const destination = channel
+      ? env.TUNNEL.getByName(channel)
+      : env.SSH_GATEWAY?.get(env.SSH_GATEWAY.newUniqueId());
+    if (!destination) return;
+    upstream = destination.connect('ssh:22', { allowHalfOpen: true });
     await upstream.opened;
-    if (!dedicated) {
+    if (channel && !dedicated) {
       await write(
         socket.writable,
         encoder.encode('HTTP/1.0 200 Connection established\r\n\r\n'),
       );
     }
-    if (rest?.length) {
-      await write(upstream.writable, rest);
-    }
+    const peer = upstream;
     await Promise.all([
-      socket.readable.pipeTo(upstream.writable),
+      (async () => {
+        if (rest?.length) await write(peer.writable, rest);
+        await socket.readable.pipeTo(peer.writable);
+      })(),
       upstream.readable.pipeTo(socket.writable),
     ]);
   } catch (error) {

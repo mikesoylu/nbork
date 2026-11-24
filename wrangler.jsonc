@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nbork",
   "main": "src/worker.ts",
+  "build": { "command": "sh ingress/build-worker.sh" },
   "connect": [{ "protocol": "tcp", "port": 8788 }],
   "workers_dev": true,
   "placement": { "mode": "smart" },
@@ -17,6 +18,7 @@
       "new_sqlite_classes": ["TunnelDO"],
       "tag": "v1",
     },
+    { "new_sqlite_classes": ["SshGateway"], "tag": "v2" },
   ],
   "durable_objects": {
     "bindings": [
@@ -24,6 +26,7 @@
         "class_name": "TunnelDO",
         "name": "TUNNEL",
       },
+      { "class_name": "SshGateway", "name": "SSH_GATEWAY" },
     ],
   },
   "observability": {
