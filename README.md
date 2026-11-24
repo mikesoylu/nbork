@@ -59,7 +59,7 @@ ssh demo@ssh.nbork.com
 
 Use `nbork demo --no-ssh` for an HTTP and WebSocket tunnel only.
 
-**Without a password, anyone who can reach the channel can open a shell.** On first use, confirm passwordless access in the host terminal. nbork remembers your approval for that channel and broker. An unattended launch without prior approval starts the web tunnel only. Passing `--ssh` explicitly enables shell access for that run.
+**Without a password, anyone who can reach the channel can open a shell.** On first use, confirm passwordless access in the host terminal. nbork remembers your approval for that channel and broker. An unattended launch without prior approval starts the web tunnel only. To save the same approval from a script, run `nbork demo --accept-passwordless-ssh`. To enable passwordless SSH for one run, use `nbork demo --ssh`.
 
 To require a password, start nbork with `--secret <password>` or set `TUNNEL_SECRET`. OpenSSH prompts for the password and the host verifies it. The Cloudflare gateway terminates SSH and can read the password and shell traffic. On first connection, OpenSSH asks you to verify the gateway's host key. The gateway separately pins the agent's key, which nbork stores in `~/.nbork/ssh_host_ed25519_key`. Set `NBORK_SSH_DIR` to choose another directory.
 
@@ -85,6 +85,8 @@ Options:
   --base-url <URL>  Broker URL [env: TUNNEL_BASE] [default: https://nbork.com]
   --no-ssh          Disable the default SSH shell
   --ssh             Explicitly enable shell access for this run
+  --accept-passwordless-ssh
+                    Remember passwordless SSH approval for this channel and broker without prompting
   --secret <VALUE>  Channel secret (SSH login password) [env: TUNNEL_SECRET]
   -h, --help        Print help
   -V, --version     Print version
@@ -111,4 +113,4 @@ npm run dev
 
 Wrangler listens on HTTP port 8787 and TCP port 8788 locally. After `npm ci`, `npm run build`, and `cargo build`, run `python3 tests/ssh.py` to check the TCP routes and `python3 tests/ssh_gateway.py` to check OpenSSH login, host keys, the installer redirect, and agent WebSockets. Both suites start local services on temporary ports.
 
-Pushing a tag such as `v0.3.0` builds stripped binaries for Linux, macOS, and Windows and publishes them with checksums to a GitHub release.
+Pushing a tag such as `v0.4.0` builds stripped binaries for Linux, macOS, and Windows and publishes them with checksums to a GitHub release.

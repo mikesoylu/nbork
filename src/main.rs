@@ -62,6 +62,7 @@ struct Config {
     base_url: String,
     secret: Option<String>,
     ssh: SshMode,
+    accept_passwordless_ssh: bool,
 }
 
 #[derive(Debug)]
@@ -142,9 +143,9 @@ fn shell_server(config: &Config, control_url: &Url) -> Result<Option<ssh::ShellS
     if config.ssh == SshMode::Disabled {
         return Ok(None);
     }
-    if config.ssh == SshMode::Default
+    if (config.ssh == SshMode::Default || config.accept_passwordless_ssh)
         && config.secret.is_none()
-        && !ssh::confirm_passwordless(&config.channel, control_url)?
+        && !ssh::confirm_passwordless(&config.channel, control_url, config.accept_passwordless_ssh)?
     {
         return Ok(None);
     }
@@ -162,6 +163,7 @@ fn shell_server(config: &Config, control_url: &Url) -> Result<Option<ssh::ShellS
 fn parse_args() -> Result<Option<Config>, String> {
     let mut channel = None;
     let mut ssh = SshMode::Default;
+    let mut accept_passwordless_ssh = false;
     let mut base_url = env::var("TUNNEL_BASE").unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
     let mut secret = env::var("TUNNEL_SECRET").ok();
     let mut args = env::args().skip(1);
@@ -176,6 +178,7 @@ fn parse_args() -> Result<Option<Config>, String> {
                 println!("nbork {}", env!("CARGO_PKG_VERSION"));
                 return Ok(None);
             }
+            "--accept-passwordless-ssh" => accept_passwordless_ssh = true,
             "--ssh" if ssh != SshMode::Disabled => ssh = SshMode::Enabled,
             "--no-ssh" if ssh != SshMode::Enabled => ssh = SshMode::Disabled,
             "--ssh" | "--no-ssh" => return Err("choose either --ssh or --no-ssh".to_owned()),
@@ -208,7 +211,9 @@ fn parse_args() -> Result<Option<Config>, String> {
             .bytes()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
     {
-        if ssh == SshMode::Enabled || (ssh == SshMode::Default && secret.is_some()) {
+        if ssh == SshMode::Enabled
+            || (ssh == SshMode::Default && (secret.is_some() || accept_passwordless_ssh))
+        {
             return Err(
                 "SSH requires a lowercase DNS label. Use --no-ssh for an HTTP-only channel."
                     .to_owned(),
@@ -222,12 +227,13 @@ fn parse_args() -> Result<Option<Config>, String> {
         base_url,
         secret,
         ssh,
+        accept_passwordless_ssh,
     }))
 }
 
 fn print_usage() {
     eprintln!(
-        "nbork {}\n\nUsage: nbork [OPTIONS] <CHANNEL>\n\nOptions:\n  --no-ssh          Disable the default SSH shell\n  --ssh             Explicitly enable shell access for this run\n  --base-url <URL>  Broker URL [env: TUNNEL_BASE] [default: {DEFAULT_BASE_URL}]\n  --secret <VALUE>  Channel secret (SSH login password) [env: TUNNEL_SECRET]\n  -h, --help        Print help\n  -V, --version     Print version\n\nThe channel can also be supplied with the CHANNEL environment variable.",
+        "nbork {}\n\nUsage: nbork [OPTIONS] <CHANNEL>\n\nOptions:\n  --no-ssh          Disable the default SSH shell\n  --ssh             Explicitly enable shell access for this run\n  --accept-passwordless-ssh\n                    Remember passwordless SSH approval for this channel and broker without prompting\n  --base-url <URL>  Broker URL [env: TUNNEL_BASE] [default: {DEFAULT_BASE_URL}]\n  --secret <VALUE>  Channel secret (SSH login password) [env: TUNNEL_SECRET]\n  -h, --help        Print help\n  -V, --version     Print version\n\nThe channel can also be supplied with the CHANNEL environment variable.",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -940,6 +946,7 @@ mod tests {
             base_url: base_url.to_owned(),
             secret: None,
             ssh: SshMode::Default,
+            accept_passwordless_ssh: false,
         }
     }
 

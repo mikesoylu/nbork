@@ -83,6 +83,7 @@ jobs:
               (cd "$directory" && zip -q "$OLDPWD/release/$archive" nbork.exe)
             else
               archive="nbork-${target}.tar.gz"
+              chmod 0755 "$directory/nbork"
               tar -C "$directory" -czf "release/$archive" nbork
             fi
             (cd release && sha256sum "$archive" > "$archive.sha256")

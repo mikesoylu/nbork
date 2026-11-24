@@ -62,7 +62,11 @@ fn state_directory() -> Result<PathBuf> {
         .context("could not locate nbork SSH directory")
 }
 
-pub fn confirm_passwordless(channel: &str, control_url: &url::Url) -> Result<bool> {
+pub fn confirm_passwordless(
+    channel: &str,
+    control_url: &url::Url,
+    accept_without_prompt: bool,
+) -> Result<bool> {
     let directory = state_directory()?.join("passwordless-ssh");
     let approval = directory.join(format!("channel-{channel}"));
     let origin = control_url.origin().ascii_serialization();
@@ -72,16 +76,18 @@ pub fn confirm_passwordless(channel: &str, control_url: &url::Url) -> Result<boo
         Err(e) if e.kind() == ErrorKind::NotFound => {}
         Err(e) => return Err(e).context("could not read passwordless SSH preference"),
     }
-    if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
-        eprintln!("[ssh] web tunnel only. Run interactively once to enable passwordless SSH for {channel}.");
-        return Ok(false);
-    }
-    eprint!("[ssh] Anyone reaching channel {channel} on {origin} can open a shell as your account. Allow passwordless SSH for this and future runs? [y/N] ");
-    io::stderr().flush()?;
-    let mut answer = String::new();
-    io::stdin().read_line(&mut answer)?;
-    if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-        return Ok(false);
+    if !accept_without_prompt {
+        if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
+            eprintln!("[ssh] web tunnel only. To approve passwordless SSH for {channel}, run interactively or pass --accept-passwordless-ssh.");
+            return Ok(false);
+        }
+        eprint!("[ssh] Anyone reaching channel {channel} on {origin} can open a shell as your account. Allow passwordless SSH for this and future runs? [y/N] ");
+        io::stderr().flush()?;
+        let mut answer = String::new();
+        io::stdin().read_line(&mut answer)?;
+        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            return Ok(false);
+        }
     }
     fs::create_dir_all(&directory)?;
     let mut file = fs::OpenOptions::new()
