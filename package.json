@@ -1,6 +1,6 @@
 {
   "name": "nbork",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "description": "Cloudflare Worker broker for nbork tunnels",
   "keywords": [
@@ -20,6 +20,6 @@
     "biome": "^0.3.3",
     "prettier": "^3.6.2",
     "typescript": "^5.5.2",
-    "wrangler": "^4.43.0"
+    "wrangler": "^4.168.0"
   }
 }

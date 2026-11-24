@@ -2,10 +2,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nbork",
   "main": "src/worker.ts",
+  "connect": [{ "protocol": "tcp", "port": 8788 }],
   "workers_dev": true,
   "placement": { "mode": "smart" },
   "vars": {
     "ROOT_DOMAIN": "nbork.com",
+    // Destination IP to SSH channel. Use "*" for a single-channel endpoint.
+    "SSH_ROUTES": {},
   },
   "compatibility_date": "2025-10-11",
   "migrations": [

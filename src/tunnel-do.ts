@@ -1,18 +1,7 @@
-// worker/src/tunnel-do.ts
-type Json = Record<string, any>;
+import { b64, decodeB64 } from './base64';
+import { closeSocket, SshRelay } from './ssh-relay';
 
-function b64(buf: ArrayBuffer | Uint8Array) {
-  const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  let s = '';
-  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-  return btoa(s);
-}
-function decodeB64(s: string): Uint8Array {
-  const bin = atob(s);
-  const u8 = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-  return u8;
-}
+type Json = Record<string, any>;
 
 export class TunnelDO {
   private state: DurableObjectState;
@@ -21,6 +10,24 @@ export class TunnelDO {
   }
 
   private control?: WebSocket;
+  private sshEnabled = false;
+  private sshSessions = new Map<string, SshRelay>();
+
+  async connect(socket: Socket) {
+    if (!this.control || !this.sshEnabled || this.sshSessions.size >= 32) {
+      await closeSocket(socket);
+      return;
+    }
+    const id = crypto.randomUUID();
+    const relay = new SshRelay(socket, this.control, id);
+    this.sshSessions.set(id, relay);
+    try {
+      await relay.run();
+    } finally {
+      this.sshSessions.delete(id);
+    }
+  }
+
   private httpStreams = new Map<
     string,
     {
@@ -43,14 +50,26 @@ export class TunnelDO {
     if (url.pathname.startsWith('/_connect/')) {
       if (upgrade !== 'websocket')
         return new Response('Upgrade required', { status: 426 });
+      if (this.control && this.sshEnabled) {
+        return new Response('SSH channel already connected', { status: 409 });
+      }
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
       server.accept();
+      if (this.control) {
+        const previous = this.control;
+        this.onControlGone(previous);
+        try {
+          previous.close(1000, 'channel reconnected');
+        } catch {}
+      }
       this.control = server;
+      this.sshEnabled = req.headers.get('x-nbork-ssh') === '1';
       this.lastClientSeen = Date.now();
       this.startHeartbeat();
 
       server.addEventListener('message', (ev: MessageEvent) => {
+        if (server !== this.control) return;
         this.lastClientSeen = Date.now();
         let msg: Json | undefined;
         try {
@@ -286,7 +305,11 @@ export class TunnelDO {
   }
 
   private onControlGone(server?: WebSocket) {
-    if (server && this.control === server) this.control = undefined;
+    if (!server || this.control !== server) return;
+    this.control = undefined;
+    this.sshEnabled = false;
+    for (const session of this.sshSessions.values()) session.stop();
+    this.sshSessions.clear();
 
     // close all edge sockets
     for (const [, edge] of this.wsEdge) {
@@ -309,6 +332,12 @@ export class TunnelDO {
   }
 
   private onControlMessage(_ws: WebSocket, msg: Json) {
+    if (typeof msg.type === 'string' && msg.type.startsWith('ssh_')) {
+      const session = this.sshSessions.get(msg.id);
+      if (session)
+        void session.receive(msg.type, msg.data).catch(() => session.stop());
+      return;
+    }
     switch (msg.type) {
       case 'http_head': {
         const s = this.httpStreams.get(msg.id);
