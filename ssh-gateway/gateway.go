@@ -19,7 +19,7 @@ type gateway struct {
 	signer ssh.Signer
 }
 
-func (g *gateway) serve(socket net.Conn, handshakeDone func()) {
+func (g *gateway) serve(socket net.Conn) {
 	defer socket.Close()
 	deadline := time.Now().Add(90 * time.Second)
 	socket.SetDeadline(deadline)
@@ -43,7 +43,6 @@ func (g *gateway) serve(socket net.Conn, handshakeDone func()) {
 	config.PasswordCallback = login
 	config.AddHostKey(g.signer)
 	outer, channels, requests, err := ssh.NewServerConn(socket, config)
-	handshakeDone()
 	if backend != nil {
 		defer backend.Close()
 	}

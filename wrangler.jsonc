@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nbork",
   "main": "src/worker.ts",
-  "build": { "command": "sh ingress/build-worker.sh" },
+  "build": { "command": "sh ssh-gateway/build-worker.sh" },
   "connect": [{ "protocol": "tcp", "port": 8788 }],
   "workers_dev": true,
   "placement": { "mode": "smart" },

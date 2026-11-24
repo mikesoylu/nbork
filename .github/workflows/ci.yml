@@ -33,12 +33,12 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.x'
-          cache-dependency-path: ingress/go.sum
+          cache-dependency-path: ssh-gateway/go.sum
       - run: npm ci
       - run: npm run build
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --locked
       - run: python3 tests/ssh.py
-      - run: go vet ./...
-        working-directory: ingress
-      - run: python3 tests/ingress.py
+      - run: GOOS=js GOARCH=wasm go vet ./...
+        working-directory: ssh-gateway
+      - run: python3 tests/ssh_gateway.py
