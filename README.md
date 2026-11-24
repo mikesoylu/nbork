@@ -51,7 +51,7 @@ Start nbork on the computer you want to reach. SSH is enabled by default. The sh
 nbork demo
 ```
 
-From another terminal, connect to the channel's SSH hostname. Any SSH username works.
+From another terminal, connect with `ssh demo.nbork.com`. The hostname selects the channel, so the example below opens the same shell with any username.
 
 ```sh
 ssh whatever@demo.nbork.com
@@ -62,6 +62,15 @@ Use `nbork demo --no-ssh` for an HTTP and WebSocket tunnel only.
 **Without a password, anyone who can reach the channel can open a shell.** On first use, confirm passwordless access in the host terminal. nbork remembers your approval for that channel and broker. An unattended launch without prior approval starts the web tunnel only. Passing `--ssh` explicitly enables shell access for that run.
 
 To require a password, start nbork with `--secret <password>` or set `TUNNEL_SECRET` before starting it. OpenSSH prompts for the password and nbork verifies it on the host. The first connection also has OpenSSH's usual host identity prompt. nbork stores its Ed25519 host key in `~/.nbork/ssh_host_ed25519_key`. Set `NBORK_SSH_DIR` to choose another directory.
+
+### SSH limitations
+
+Each connection supports one interactive shell. The following SSH features are unsupported.
+
+- One-shot commands such as `ssh demo.nbork.com uptime`. Run `uptime` after connecting.
+- File transfers with `scp`, `sftp`, or `rsync` over SSH.
+- Port forwarding (`-L`, `-R`, `-D`), agent forwarding, and X11 forwarding.
+- Client public-key login through `authorized_keys`.
 
 ### Configure Cloudflare TCP routing
 
