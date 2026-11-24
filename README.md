@@ -126,4 +126,4 @@ ssh -o 'ProxyCommand=nc -X connect -x 127.0.0.1:8788 %h 22' whatever@demo.nbork.
 
 After `cargo build` and `npm ci`, run `python3 tests/ssh.py` on macOS or Linux to exercise both TCP routing modes and password handling with OpenSSH and OpenBSD netcat.
 
-Pushing a tag such as `v0.2.2` builds stripped binaries for Linux, macOS, and Windows and publishes them with checksums to a GitHub release.
+Pushing a tag such as `v0.3.0` builds stripped binaries for Linux, macOS, and Windows and publishes them with checksums to a GitHub release.
