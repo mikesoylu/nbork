@@ -3,6 +3,7 @@ import { routeSsh } from './ssh-route';
 export interface Env {
   TUNNEL: DurableObjectNamespace;
   SSH_ROUTES?: Record<string, string>;
+  WEB_ORIGIN_HOST?: string;
   ROOT_DOMAIN: string; // e.g. "tunnel.app"
 }
 
@@ -18,7 +19,10 @@ export default {
   ): Promise<Response> {
     const url = new URL(req.url);
 
-    if (url.hostname === env.ROOT_DOMAIN && url.pathname === '/setup.sh') {
+    if (
+      url.pathname === '/setup.sh' &&
+      (url.hostname === env.ROOT_DOMAIN || url.hostname === env.WEB_ORIGIN_HOST)
+    ) {
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         return new Response('Method not allowed', {
           status: 405,
