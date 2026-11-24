@@ -1,5 +1,8 @@
+import { routeSsh } from './ssh-route';
+
 export interface Env {
   TUNNEL: DurableObjectNamespace;
+  SSH_ROUTES?: Record<string, string>;
   ROOT_DOMAIN: string; // e.g. "tunnel.app"
 }
 
@@ -7,6 +10,7 @@ const SUBDOMAIN_RE = /^(?<sub>[^.]+)\.(?<root>.+)$/;
 const CH_PORT_RE = /^(?<channel>[a-z0-9-]+)-(\*)?(?<port>\d{1,5})$/i;
 
 export default {
+  connect: routeSsh,
   async fetch(
     req: Request,
     env: Env,
@@ -74,6 +78,6 @@ export default {
     const fwd = new Request(req, { headers: fwdHeaders });
     return stub.fetch(fwd);
   },
-};
+} satisfies ExportedHandler<Env>;
 
 export { TunnelDO } from './tunnel-do';

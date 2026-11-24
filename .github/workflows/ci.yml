@@ -32,3 +32,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked
+      - run: python3 tests/ssh.py

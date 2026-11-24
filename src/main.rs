@@ -1,3 +1,5 @@
+mod ssh;
+
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -47,11 +49,19 @@ type LocalSockets = Arc<Mutex<HashMap<String, mpsc::UnboundedSender<LocalWsComma
 type LocalHttpBody = UnsyncBoxBody<Bytes, Infallible>;
 type LocalHttpClient = Client<HttpConnector, LocalHttpBody>;
 
+#[derive(Debug, PartialEq, Eq)]
+enum SshMode {
+    Default,
+    Enabled,
+    Disabled,
+}
+
 #[derive(Debug)]
 struct Config {
     channel: String,
     base_url: String,
     secret: Option<String>,
+    ssh: SshMode,
 }
 
 #[derive(Debug)]
@@ -86,11 +96,19 @@ async fn main() {
         }
     };
 
+    let shell = match shell_server(&config, &control_url) {
+        Ok(server) => server,
+        Err(error) => {
+            eprintln!("error: {error:#}");
+            std::process::exit(2);
+        }
+    };
+
     let mut failed_attempts = 0_u32;
 
     loop {
         let session = tokio::select! {
-            session = run_session(&config.channel, &control_url) => session,
+            session = run_session(&config.channel, &control_url, shell.clone()) => session,
             _ = shutdown_signal() => {
                 eprintln!("[tunnel] shutting down");
                 return;
@@ -120,8 +138,30 @@ async fn main() {
     }
 }
 
+fn shell_server(config: &Config, control_url: &Url) -> Result<Option<ssh::ShellServer>> {
+    if config.ssh == SshMode::Disabled {
+        return Ok(None);
+    }
+    if config.ssh == SshMode::Default
+        && config.secret.is_none()
+        && !ssh::confirm_passwordless(&config.channel, control_url)?
+    {
+        return Ok(None);
+    }
+
+    let server = ssh::ShellServer::new(config.secret.as_deref())?;
+    let policy = if config.secret.is_some() {
+        "password required"
+    } else {
+        "anyone with the channel address can open a shell"
+    };
+    eprintln!("[ssh] enabled for {} ({policy})", config.channel);
+    Ok(Some(server))
+}
+
 fn parse_args() -> Result<Option<Config>, String> {
     let mut channel = None;
+    let mut ssh = SshMode::Default;
     let mut base_url = env::var("TUNNEL_BASE").unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
     let mut secret = env::var("TUNNEL_SECRET").ok();
     let mut args = env::args().skip(1);
@@ -136,6 +176,9 @@ fn parse_args() -> Result<Option<Config>, String> {
                 println!("nbork {}", env!("CARGO_PKG_VERSION"));
                 return Ok(None);
             }
+            "--ssh" if ssh != SshMode::Disabled => ssh = SshMode::Enabled,
+            "--no-ssh" if ssh != SshMode::Enabled => ssh = SshMode::Disabled,
+            "--ssh" | "--no-ssh" => return Err("choose either --ssh or --no-ssh".to_owned()),
             "--base-url" => {
                 base_url = args
                     .next()
@@ -158,16 +201,33 @@ fn parse_args() -> Result<Option<Config>, String> {
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "missing channel name".to_owned())?;
 
+    if channel.len() > 63
+        || channel.starts_with('-')
+        || channel.ends_with('-')
+        || !channel
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+    {
+        if ssh == SshMode::Enabled || (ssh == SshMode::Default && secret.is_some()) {
+            return Err(
+                "SSH requires a lowercase DNS label. Use --no-ssh for an HTTP-only channel."
+                    .to_owned(),
+            );
+        }
+        ssh = SshMode::Disabled;
+    }
+
     Ok(Some(Config {
         channel,
         base_url,
         secret,
+        ssh,
     }))
 }
 
 fn print_usage() {
     eprintln!(
-        "nbork {}\n\nUsage: nbork [OPTIONS] <CHANNEL>\n\nOptions:\n  --base-url <URL>  Broker URL [env: TUNNEL_BASE] [default: {DEFAULT_BASE_URL}]\n  --secret <VALUE>  Channel secret [env: TUNNEL_SECRET]\n  -h, --help        Print help\n  -V, --version     Print version\n\nThe channel can also be supplied with the CHANNEL environment variable.",
+        "nbork {}\n\nUsage: nbork [OPTIONS] <CHANNEL>\n\nOptions:\n  --no-ssh          Disable the default SSH shell\n  --ssh             Explicitly enable shell access for this run\n  --base-url <URL>  Broker URL [env: TUNNEL_BASE] [default: {DEFAULT_BASE_URL}]\n  --secret <VALUE>  Channel secret (SSH login password) [env: TUNNEL_SECRET]\n  -h, --help        Print help\n  -V, --version     Print version\n\nThe channel can also be supplied with the CHANNEL environment variable.",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -191,14 +251,21 @@ fn control_url(config: &Config) -> Result<Url> {
         .map_err(|_| anyhow!("broker URL cannot be used as a base URL"))?
         .push("_connect")
         .push(&config.channel);
-    if let Some(secret) = &config.secret {
-        url.query_pairs_mut().append_pair("auth", secret);
+    // SSH checks the password on the host, inside the encrypted session.
+    if config.ssh == SshMode::Disabled {
+        if let Some(secret) = &config.secret {
+            url.query_pairs_mut().append_pair("auth", secret);
+        }
     }
     Ok(url)
 }
 
-async fn run_session(channel: &str, control_url: &Url) -> SessionExit {
-    match connect_and_proxy(channel, control_url).await {
+async fn run_session(
+    channel: &str,
+    control_url: &Url,
+    shell: Option<ssh::ShellServer>,
+) -> SessionExit {
+    match connect_and_proxy(channel, control_url, shell).await {
         Ok(()) => SessionExit {
             connected: true,
             error: anyhow!("control connection closed"),
@@ -207,7 +274,11 @@ async fn run_session(channel: &str, control_url: &Url) -> SessionExit {
     }
 }
 
-async fn connect_and_proxy(channel: &str, control_url: &Url) -> Result<(), (bool, anyhow::Error)> {
+async fn connect_and_proxy(
+    channel: &str,
+    control_url: &Url,
+    shell: Option<ssh::ShellServer>,
+) -> Result<(), (bool, anyhow::Error)> {
     let mut request = control_url
         .as_str()
         .into_client_request()
@@ -222,15 +293,25 @@ async fn connect_and_proxy(channel: &str, control_url: &Url) -> Result<(), (bool
         HeaderValue::from_static(concat!("nbork/", env!("CARGO_PKG_VERSION"))),
     );
 
+    if shell.is_some() {
+        request
+            .headers_mut()
+            .insert("x-nbork-ssh", HeaderValue::from_static("1"));
+    }
     let (control, _) = connect_async(request)
         .await
         .map_err(|error| (false, anyhow!(error).context("could not connect to broker")))?;
     eprintln!("[tunnel] connected: {channel}");
 
-    proxy_session(control).await.map_err(|error| (true, error))
+    proxy_session(control, shell)
+        .await
+        .map_err(|error| (true, error))
 }
 
-async fn proxy_session<S>(control: tokio_tungstenite::WebSocketStream<S>) -> Result<()>
+async fn proxy_session<S>(
+    control: tokio_tungstenite::WebSocketStream<S>,
+    shell: Option<ssh::ShellServer>,
+) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -238,6 +319,7 @@ where
     let (outbound, mut outbound_rx) = mpsc::channel(OUTBOUND_QUEUE_CAPACITY);
     let request_bodies: RequestBodies = Arc::new(Mutex::new(HashMap::new()));
     let local_sockets: LocalSockets = Arc::new(Mutex::new(HashMap::new()));
+    let mut ssh_sessions = ssh::Sessions::new(shell);
     let http_client = local_http_client();
     let mut jobs = JoinSet::new();
     let mut app_heartbeat = time::interval(Duration::from_secs(10));
@@ -271,6 +353,7 @@ where
                             &http_client,
                             &mut jobs,
                             &mut last_pong,
+                            &mut ssh_sessions,
                         ) {
                             eprintln!("[tunnel] ignored invalid control message: {error:#}");
                         }
@@ -286,6 +369,7 @@ where
                                     &http_client,
                                     &mut jobs,
                                     &mut last_pong,
+                                    &mut ssh_sessions,
                                 ) {
                                     eprintln!("[tunnel] ignored invalid control message: {error:#}");
                                 }
@@ -357,11 +441,13 @@ fn handle_control_message(
     http_client: &LocalHttpClient,
     jobs: &mut JoinSet<()>,
     last_pong: &mut Instant,
+    ssh_sessions: &mut ssh::Sessions,
 ) -> Result<()> {
     let message: Value = serde_json::from_str(text).context("malformed JSON")?;
     let message_type = string_field(&message, "type")?;
 
     match message_type {
+        kind if kind.starts_with("ssh_") => ssh_sessions.handle(kind, &message, outbound, jobs)?,
         "ping" => {
             let outbound = outbound.clone();
             jobs.spawn(async move {
@@ -853,6 +939,7 @@ mod tests {
             channel: channel.to_owned(),
             base_url: base_url.to_owned(),
             secret: None,
+            ssh: SshMode::Default,
         }
     }
 
@@ -865,12 +952,20 @@ mod tests {
     #[test]
     fn includes_secret_in_control_url() {
         let mut config = config("http://localhost:8787", "demo");
+        config.ssh = SshMode::Disabled;
         config.secret = Some("a secret&more".to_owned());
         let url = control_url(&config).unwrap();
         assert_eq!(
             url.as_str(),
             "ws://localhost:8787/_connect/demo?auth=a+secret%26more"
         );
+    }
+
+    #[test]
+    fn ssh_password_stays_off_the_control_url() {
+        let mut config = config("https://nbork.com", "demo");
+        config.secret = Some("a test password".to_owned());
+        assert_eq!(control_url(&config).unwrap().query(), None);
     }
 
     #[test]
