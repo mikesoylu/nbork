@@ -51,47 +51,30 @@ Start nbork on the computer you want to reach. SSH is enabled by default. The sh
 nbork demo
 ```
 
-From another terminal, connect with `ssh demo.nbork.com`. The hostname selects the channel, so the example below opens the same shell with any username.
+With the shared ingress deployed, connect from another computer with stock OpenSSH. The username is the nbork channel name.
 
 ```sh
-ssh whatever@demo.nbork.com
+ssh demo@nbork.com
 ```
 
 Use `nbork demo --no-ssh` for an HTTP and WebSocket tunnel only.
 
 **Without a password, anyone who can reach the channel can open a shell.** On first use, confirm passwordless access in the host terminal. nbork remembers your approval for that channel and broker. An unattended launch without prior approval starts the web tunnel only. Passing `--ssh` explicitly enables shell access for that run.
 
-To require a password, start nbork with `--secret <password>` or set `TUNNEL_SECRET` before starting it. OpenSSH prompts for the password and nbork verifies it on the host. The first connection also has OpenSSH's usual host identity prompt. nbork stores its Ed25519 host key in `~/.nbork/ssh_host_ed25519_key`. Set `NBORK_SSH_DIR` to choose another directory.
+To require a password, start nbork with `--secret <password>` or set `TUNNEL_SECRET`. OpenSSH prompts for the password and the host verifies it. The ingress terminates SSH and can read the password and shell traffic. On first connection, OpenSSH asks you to verify the gateway's host key. The gateway separately pins the agent's key, which nbork stores in `~/.nbork/ssh_host_ed25519_key`. Set `NBORK_SSH_DIR` to choose another directory.
 
 ### SSH limitations
 
-Each connection supports one interactive shell. The following SSH features are unsupported.
+Each connection supports one interactive shell. The public gateway listens on port 22. OpenSSH’s `-p` option changes the port dialed on the gateway. The following SSH features are unsupported.
 
-- One-shot commands such as `ssh demo.nbork.com uptime`. Run `uptime` after connecting.
+- One-shot commands such as `ssh demo@nbork.com uptime`. Run `uptime` after connecting.
 - File transfers with `scp`, `sftp`, or `rsync` over SSH.
 - Port forwarding (`-L`, `-R`, `-D`), agent forwarding, and X11 forwarding.
 - Client public-key login through `authorized_keys`.
 
-### Configure Cloudflare TCP routing
+### Hosting the SSH gateway
 
-Deploy the Worker, then create a Spectrum TCP application with that Worker as its origin and edge port **22**. Spectrum passes the SSH traffic through with edge TLS termination off. Worker origins are available on Pro and Business zones and on zones with Spectrum Enterprise. Pro and Business zones without Spectrum Enterprise get one Worker-origin application on one TCP port. [Cloudflare setup instructions](https://developers.cloudflare.com/spectrum/how-to/route-tcp-traffic-to-a-worker/)
-
-**For a single machine**, name the Spectrum application `demo.nbork.com` and set the following entry in the Worker's `vars` in `wrangler.jsonc` before deploying. All TCP connections to this Worker then go to `demo`. The SSH command above works with a stock client and its default configuration.
-
-```json
-"SSH_ROUTES": { "*": "demo" }
-```
-
-For multiple channel hostnames with dedicated Spectrum IPs, map each destination IPv4 and IPv6 address to its channel in `SSH_ROUTES`. Use assigned static IPs for a stable mapping. Spectrum supplies the Worker with the destination IP and port. SSH sends its username after encryption and omits the destination hostname. [Cloudflare connection addresses](https://developers.cloudflare.com/workers/runtime-apis/handlers/connect/#connection-addresses)
-
-**To share one Spectrum address across arbitrary channels**, name the application `ssh.nbork.com`, leave its address unmapped, and add this once to `~/.ssh/config` on each connecting computer. This uses the HTTP CONNECT mode of OpenBSD netcat (`nc`) to pass the channel hostname to the TCP listener.
-
-```sshconfig
-Host *.nbork.com
-    ProxyCommand nc -X connect -x ssh.nbork.com:22 %h 22
-```
-
-With this configuration, `ssh whatever@demo.nbork.com` routes to `demo` even if the client supplies another username or `-p` value. For a direct TCP connection, the client must dial a provisioned Spectrum edge port. The edge port never selects a local service.
+One ingress serves `nbork.com` on port 22 for SSH and port 443 for HTTPS and agent WebSockets. It uses the existing Cloudflare Worker and Spectrum endpoint to reach each channel. The operator configures the ingress once. [Deployment and cutover guide](ingress/README.md)
 
 ## Configuration
 
@@ -126,13 +109,6 @@ npm run build
 npm run dev
 ```
 
-Wrangler listens on HTTP port 8787 and TCP port 8788 locally. To exercise SSH without a Spectrum application, run the following in two additional terminals.
-
-```sh
-cargo run -- demo --base-url http://127.0.0.1:8787
-ssh -o 'ProxyCommand=nc -X connect -x 127.0.0.1:8788 %h 22' whatever@demo.nbork.com
-```
-
-After `cargo build` and `npm ci`, run `python3 tests/ssh.py` on macOS or Linux to exercise both TCP routing modes and password handling with OpenSSH and OpenBSD netcat.
+Wrangler listens on HTTP port 8787 and TCP port 8788 locally. After `cargo build` and `npm ci`, run `python3 tests/ssh.py` to exercise the Worker's TCP routes. With Go 1.26 or newer installed, run `python3 tests/ingress.py` to exercise the shared ingress with OpenSSH, HTTPS and an agent WebSocket. Both suites start local services on temporary ports.
 
 Pushing a tag such as `v0.3.0` builds stripped binaries for Linux, macOS, and Windows and publishes them with checksums to a GitHub release.

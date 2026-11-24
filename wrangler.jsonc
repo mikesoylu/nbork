@@ -7,6 +7,7 @@
   "placement": { "mode": "smart" },
   "vars": {
     "ROOT_DOMAIN": "nbork.com",
+    "WEB_ORIGIN_HOST": "broker.nbork.com",
     // Destination IP to SSH channel. Use "*" for a single-channel endpoint.
     "SSH_ROUTES": {},
   },
