@@ -22,11 +22,11 @@ def available_port():
 
 
 @contextlib.contextmanager
-def service(args, log, ready, confirm=False, **env):
+def service(args, log, ready, tty_input=None, **env):
     with contextlib.ExitStack() as stack:
         output = stack.enter_context(log.open("wb"))
         stdin, stderr = subprocess.DEVNULL, output
-        if confirm:
+        if tty_input is not None:
             master, slave = pty.openpty()
             stack.callback(os.close, master)
             stack.callback(os.close, slave)
@@ -35,13 +35,13 @@ def service(args, log, ready, confirm=False, **env):
                                 env={**{k: v for k, v in os.environ.items() if k != "TUNNEL_SECRET"}, **env},
                                 start_new_session=True)
         try:
-            if confirm:
-                os.write(master, b"yes\n")
+            if tty_input:
+                os.write(master, tty_input)
             deadline = time.monotonic() + 25
             while ready not in log.read_text():
                 if proc.poll() is not None or time.monotonic() >= deadline:
                     raise RuntimeError(log.read_text())
-                if confirm and select.select([master], [], [], 0.1)[0]:
+                if tty_input is not None and select.select([master], [], [], 0.1)[0]:
                     output.write(os.read(master, 8192))
                     output.flush()
                 else:
@@ -98,23 +98,34 @@ def exercise(directory, dedicated):
             [ROOT / "node_modules/.bin/wrangler", "dev", "--config", config, "--port", str(http_port)],
             directory / "worker.log", "Ready on http", WRANGLER_SEND_METRICS="false", NO_COLOR="1"))
 
-        def host(channel, *options, confirm=False):
+        def host(channel, *options, tty_input=None, broker_host="127.0.0.1"):
             return service([ROOT / "target/debug/nbork", channel, "--base-url",
-                            f"http://127.0.0.1:{http_port}", *options], directory / f"{channel}.log",
-                           f"connected: {channel}", confirm=confirm, NBORK_SSH_DIR=str(directory / channel), SHELL="/bin/sh")
+                            f"http://{broker_host}:{http_port}", *options], directory / f"{channel}.log",
+                           f"connected: {channel}", tty_input=tty_input, NBORK_SSH_DIR=str(directory / channel), SHELL="/bin/sh")
 
-        with host("demo", confirm=True):
+        with host("demo", tty_input=b"yes\n"):
             login("whatever@demo.nbork.test", 7)
         with host("demo", "--no-ssh"):
             login("whatever@demo.nbork.test", 255)
         stack.enter_context(host("demo"))
         login("whatever@demo.nbork.test", 7)
         if not dedicated:
-            stack.enter_context(host("locked", "--secret", "test-password"))
+            with host("headless", "--accept-passwordless-ssh"):
+                login("guest@headless.nbork.test", 7)
+            with host("headless"):
+                login("guest@headless.nbork.test", 7)
+            with host("headless", broker_host="localhost"):
+                login("guest@headless.nbork.test", 255)
+            with host("no-prompt", "--accept-passwordless-ssh", tty_input=b""):
+                login("guest@no-prompt.nbork.test", 7)
+                assert "Allow passwordless SSH" not in (directory / "no-prompt.log").read_text()
+            stack.enter_context(host("locked", "--accept-passwordless-ssh", "--secret", "test-password"))
+            assert not (directory / "locked/passwordless-ssh").exists()
             login("other@locked.nbork.test", 255, options=["-o", "BatchMode=yes"])
             login("other@locked.nbork.test", 255, "incorrect")
             login("anyone@locked.nbork.test", 7, "test-password", ["-p", "45678"])
-            stack.enter_context(host("web-only", "--no-ssh"))
+            stack.enter_context(host("web-only", "--no-ssh", "--accept-passwordless-ssh"))
+            assert not (directory / "web-only/passwordless-ssh").exists()
             login("guest@web-only.nbork.test", 255)
             stack.enter_context(host("unapproved"))
             login("guest@unapproved.nbork.test", 255)
